@@ -21,9 +21,14 @@ export interface SnippetInsertionContext {
     curlyBraces?: Span;
 
     /**
+     * Is it inside a double-quoted string? asdf?
+     */
+    insideJsonPropertyName?: boolean;
+
+    /**
      * Is it inside a double-quoted string?
      */
-    insideDoubleQuotes?: boolean;
+    insideJsonString?: boolean;
 
     /**
      * True if the caller should trigger a completion dropdown

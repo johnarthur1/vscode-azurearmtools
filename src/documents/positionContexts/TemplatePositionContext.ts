@@ -1,9 +1,8 @@
+import { MarkdownString } from "vscode";
 // ----------------------------------------------------------------------------
 // Copyright (c) Microsoft Corporation.  All rights reserved.
 // ----------------------------------------------------------------------------
-
 // tslint:disable:max-line-length
-
 import { templateKeys } from "../../constants";
 import { ext } from "../../extensionVariables";
 import { assert } from '../../fixed_assert';
@@ -21,7 +20,7 @@ import { DeploymentParametersDoc } from "../parameters/DeploymentParametersDoc";
 import { IParameterDefinition } from "../parameters/IParameterDefinition";
 import { getPropertyValueCompletionItems } from "../parameters/ParameterValues";
 import { DeploymentTemplateDoc } from "../templates/DeploymentTemplateDoc";
-import { getResourceIdCompletions } from "../templates/getResourceIdCompletions";
+import { getResourceIdCompletions, jsonStringToTleExpression } from "../templates/getResourceIdCompletions";
 import { IFunctionMetadata, IFunctionParameterMetadata } from "../templates/IFunctionMetadata";
 import { TemplateScope } from "../templates/scopes/TemplateScope";
 import { isDeploymentResource } from "../templates/scopes/templateScopes";
@@ -51,13 +50,13 @@ class TleInfo implements ITleInfo {
 export class TemplatePositionContext extends PositionContext {
     private _tleInfo: CachedValue<TleInfo | undefined> = new CachedValue<TleInfo | undefined>();
 
-    public static fromDocumentLineAndColumnIndexes(deploymentTemplate: DeploymentTemplateDoc, documentLineIndex: number, documentColumnIndex: number, associatedParameters: DeploymentParametersDoc | undefined, allowOutOfBounds: boolean = false): TemplatePositionContext {
+    public static fromDocumentLineAndColumnIndexes(deploymentTemplate: DeploymentTemplateDoc, documentLineIndex: number, documentColumnIndex: number, associatedParameters: DeploymentParametersDoc | undefined, allowOutOfBounds: boolean = true): TemplatePositionContext {
         let context = new TemplatePositionContext(deploymentTemplate, associatedParameters);
         context.initFromDocumentLineAndColumnIndices(documentLineIndex, documentColumnIndex, allowOutOfBounds);
         return context;
     }
 
-    public static fromDocumentCharacterIndex(deploymentTemplate: DeploymentTemplateDoc, documentCharacterIndex: number, associatedParameters: DeploymentParametersDoc | undefined, allowOutOfBounds: boolean = false): TemplatePositionContext {
+    public static fromDocumentCharacterIndex(deploymentTemplate: DeploymentTemplateDoc, documentCharacterIndex: number, associatedParameters: DeploymentParametersDoc | undefined, allowOutOfBounds: boolean = true): TemplatePositionContext {
         let context = new TemplatePositionContext(deploymentTemplate, associatedParameters);
         context.initFromDocumentCharacterIndex(documentCharacterIndex, allowOutOfBounds);
         return context;
@@ -287,8 +286,8 @@ export class TemplatePositionContext extends PositionContext {
         return false;
     }
 
-    public getSnippetInsertionContext(triggerCharacter: string | undefined): SnippetInsertionContext {
-        const insertionContext = super.getSnippetInsertionContext(triggerCharacter);
+    public getSnippetInsertionContext(triggerCharacter: string | undefined, allowInsideJsonString: boolean): SnippetInsertionContext {
+        const insertionContext = super.getSnippetInsertionContext(triggerCharacter, allowInsideJsonString);
         const context = insertionContext.context;
         const parents = insertionContext.parents;
 
@@ -329,16 +328,23 @@ export class TemplatePositionContext extends PositionContext {
         }
 
         if (!tleInfo) {
-            // No TLE string at this location, consider snippet completions
+            // No JSON string at this location, consider snippet completions
             const snippets = await this.getSnippetCompletionItems(triggerCharacter);
             if (snippets.triggerSuggest) {
                 return snippets;
             } else {
                 completions.push(...snippets.items);
             }
-        } else {
 
-            // We're inside a JSON string. It may or may not contain square brackets.
+            const insertionContext = this.getSnippetInsertionContext(triggerCharacter, true/*asdf*/);
+            if (insertionContext.context === 'dependson') { //asdf refactor
+                completions.push(...this.getDependsOnCompletionItems(/*asdf!!insertionContext.insideJsonString*/));
+            }
+        } else {
+            const insertionContext = this.getSnippetInsertionContext(triggerCharacter, true/*asdf*/);
+            if (insertionContext.context === 'dependson') {
+                completions.push(...this.getDependsOnCompletionItems(/*!!insertionContext.insideJsonString*/));
+            }
 
             // The function/string/number/etc at the current position inside the string expression,
             // or else the JSON string itself even it's not an expression
@@ -369,8 +375,44 @@ export class TemplatePositionContext extends PositionContext {
         return { items: completions };
     }
 
+    private getDependsOnCompletionItems(): Completion.Item[] {
+        const completions: Completion.Item[] = [];
+        let span: Span;
+        if (this.jsonToken?.type === Json.TokenType.QuotedString) {
+            // We're already inside a JSON string.  The completion should replace the entire string because it's
+            // not likely the user would want anything else
+            span = this.jsonToken.span;
+        } else {
+            span = this.emptySpanAtDocumentCharacterIndex;
+        }
+
+        for (const resource of this.document.topLevelScope/*asdf*/.resources) { //asdf getResourcesInfo?
+            let /*asdf*/ name = resource.nameValue?.asStringValue?.unquotedValue;
+            const resType = resource.resourceTypeValue?.asStringValue?.unquotedValue;
+
+            if (name && resType) {
+                let resourceId = `"[resourceId(${jsonStringToTleExpression(resType)}, ${jsonStringToTleExpression(name)})]"`;
+
+                const resourceResTypeMarkdown = `- **Name**: *${name}*\n- **Type**: *${resType}*`;
+                const longDocumentation = `Reference to resource\n${resourceResTypeMarkdown}`;
+                const ci2 = new Completion.Item({
+                    label: resourceId,
+                    insertText: resourceId,
+                    detail: resourceId,
+                    documentation: new MarkdownString(longDocumentation),
+                    span,
+                    kind: Completion.CompletionKind.dependsOnResName,
+                    filterText: resourceId
+                });
+                completions.push(ci2);
+            }
+        }
+
+        return completions;
+    }
+
     private async getSnippetCompletionItems(triggerCharacter: string | undefined): Promise<ICompletionItemsResult> {
-        const insertionContext = this.getSnippetInsertionContext(triggerCharacter);
+        const insertionContext = this.getSnippetInsertionContext(triggerCharacter, false);
         if (insertionContext.triggerSuggest) {
             return { items: [], triggerSuggest: true };
         } else if (insertionContext.context) {

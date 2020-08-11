@@ -21,7 +21,6 @@
 import * as TLE from "./src/language/expressions/TLE";
 import * as Json from "./src/language/json/JSON";
 import * as basic from "./src/language/json/Tokenizer";
-import * as Language from "./src/language/LineColPos";
 import * as Completion from './src/vscodeIntegration/Completion';
 
 export { activateInternal, deactivateInternal } from './src/AzureRMTools'; // Export activate/deactivate for main.js
@@ -57,7 +56,7 @@ export { FunctionSignatureHelp, TleParseResult } from "./src/language/expression
 export { DefinitionKind, INamedDefinition } from "./src/language/INamedDefinition";
 export { Issue } from "./src/language/Issue";
 export { IssueKind } from "./src/language/IssueKind";
-export * from "./src/language/LineColPos";
+export { LineColPos } from "./src/language/LineColPos";
 export { ReferenceList } from "./src/language/ReferenceList";
 export { ContainsBehavior, Span } from "./src/language/Span";
 export { LanguageServerState } from "./src/languageclient/startArmLanguageServer";
@@ -92,14 +91,12 @@ export { UndefinedVariablePropertyVisitor } from "./src/visitors/UndefinedVariab
 export { UnrecognizedBuiltinFunctionIssue, UnrecognizedUserFunctionIssue, UnrecognizedUserNamespaceIssue } from "./src/visitors/UnrecognizedFunctionIssues";
 export { UnrecognizedFunctionVisitor } from "./src/visitors/UnrecognizedFunctionVisitor";
 export { IGotoParameterValueArgs } from "./src/vscodeIntegration/commandArguments";
-export * from "./src/vscodeIntegration/Completion";
 export { IConfiguration } from "./src/vscodeIntegration/Configuration";
 export { HoverInfo } from "./src/vscodeIntegration/Hover";
 export { JsonOutlineProvider, shortenTreeLabel } from "./src/vscodeIntegration/Treeview";
 export { getVSCodePositionFromPosition, getVSCodeRangeFromSpan } from "./src/vscodeIntegration/vscodePosition";
 export { Completion };
 export { Json };
-export { Language };
 export { basic };
 export { TLE };
 

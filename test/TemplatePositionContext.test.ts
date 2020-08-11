@@ -2231,4 +2231,8 @@ suite("TemplatePositionContext", () => {
             });
         });
     });
+
+    suite("out of bounds asdf", () => {
+        //asdf
+    });
 });

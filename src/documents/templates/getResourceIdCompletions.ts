@@ -373,7 +373,7 @@ function isExpression(text: string): boolean {
  *   "mystring" => "'mystring'"
  *   "[variables('abc')]" => "variables('abc')"
  */
-function jsonStringToTleExpression(stringUnquotedValue: string): string {
+export /*asdf*/function jsonStringToTleExpression(stringUnquotedValue: string): string { //asdf move
     if (isExpression(stringUnquotedValue)) {
         return stringUnquotedValue.slice(1, stringUnquotedValue.length - 1);
     } else {

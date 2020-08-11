@@ -10,4 +10,5 @@ export interface IResource {
     childDeployment: TemplateScope | undefined;
     span: Span;
     nameValue: Json.StringValue | undefined;
+    resourceTypeValue: Json.StringValue | undefined;
 }

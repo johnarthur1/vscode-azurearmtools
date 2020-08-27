@@ -73,9 +73,9 @@ suite("dependsOn completions", () => {
         ): void {
             test(testName, async () => {
 
-                const { dt, markers: { cursor, replaceStart } } = await parseTemplateWithMarkers(options.template, []);
+                const { dt, markers: { cursor, replaceStart } } = await parseTemplateWithMarkers(options.template);
                 const pc = dt.getContextFromDocumentCharacterIndex(cursor.index, undefined);
-                const { items: completions } = await pc.getCompletionItems(options.triggerCharacter);
+                const { items: completions } = await pc.getCompletionItems(options.triggerCharacter); // << BREAKPOINT HERE (ONE)
 
                 const actual: PartialCompletionItem[] = completions.map(filterActual);
 
@@ -240,6 +240,94 @@ suite("dependsOn completions", () => {
                     ]
                 }
             );
+        });
+
+        suite("nested templates", () => {
+
+            createDependsOnCompletionsTest(
+                "Top level shouldn't find resources in nested scope",
+                {
+                    template: {
+                        "resources": [
+                            {
+                                dependsOn: [
+                                    "<!replaceStart!><!cursor!>"
+                                ]
+                            },
+                            {
+                                "type": "Microsoft.Storage/storageAccounts",
+                                "apiVersion": "2019-06-01",
+                                "name": "[concat(parameters('projectName'), 'stgdiag')]"
+                            },
+                            {
+                                "type": "Microsoft.Resources/deployments",
+                                "name": "[concat(parameters('projectName'),'dnsupdate')]",
+                                "dependsOn": [
+                                    "[concat(parameters('projectName'),'lbwebgwpip')]"
+                                ],
+                                "properties": {
+                                    "template": {
+                                        "resources": [
+                                            {
+                                                "name": "[parameters('DNSZone')]",
+                                                "type": "Microsoft.Network/dnsZones"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    "expected": [
+                        {
+                            "insertText": "[resourceId('Microsoft.Storage/storageAccounts', concat(parameters('projectName'), 'stgdiag'))"
+                        },
+                        {
+                            "insertText": "[resourceId('Microsoft.Resources/deployments', concat(parameters('projectName'),'dnsupdate'))"
+                        }
+                    ]
+                });
+
+            createDependsOnCompletionsTest(
+                "Inside nested scope shouldn't find top-level resources",
+                {
+                    template: {
+                        "resources": [
+                            {
+                                "type": "Microsoft.Storage/storageAccounts",
+                                "apiVersion": "2019-06-01",
+                                "name": "[concat(parameters('projectName'), 'stgdiag')]"
+                            },
+                            {
+                                "type": "Microsoft.Resources/deployments",
+                                "name": "[concat(parameters('projectName'),'dnsupdate')]",
+                                "dependsOn": [
+                                    "[concat(parameters('projectName'),'lbwebgwpip')]"
+                                ],
+                                "properties": {
+                                    "template": {
+                                        "resources": [
+                                            {
+                                                "name": "[parameters('DNSZone')]",
+                                                "type": "Microsoft.Network/dnsZones"
+                                            },
+                                            {
+                                                dependsOn: [
+                                                    "<!replaceStart!><!cursor!>"
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    "expected": [
+                        {
+                            "insertText": "[resourceId('Microsoft.Network/dnsZones', parameters('DNSZone'))"
+                        }
+                    ]
+                });
         });
 
         suite("completion triggering", () => {

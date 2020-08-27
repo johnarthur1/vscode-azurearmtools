@@ -401,8 +401,15 @@ export abstract class PositionContext {
         return { context: undefined, parents, insideJsonString };
     }
 
+    public get isInsideComment(): boolean {
+        return !!this.document.jsonParseResult.getCommentTokenAtDocumentIndex(
+            this.documentCharacterIndex,
+            ContainsBehavior.enclosed);
+    }
+
     // Retrieves the array or object which would be the parent if a JSON item were added
-    //   at the current location
+    //   at the current location. If the cursor is inside any other kind of value, or  inside a comment,
+    //   returns undefined.
     public getInsertionParent(): Json.ObjectValue | Json.ArrayValue | undefined {
         const enclosingJsonValue = this.document.jsonParseResult.getValueAtCharacterIndex(
             this.documentCharacterIndex,
@@ -413,14 +420,27 @@ export abstract class PositionContext {
 
         // We're immediately inside an object or array, not any other kind of value.  But we could still be inside
         // a comment
-        if (!!this.document.jsonParseResult.getCommentTokenAtDocumentIndex(
-            this.documentCharacterIndex,
-            ContainsBehavior.enclosed)
-        ) {
+        if (this.isInsideComment) {
             // Inside a comment, can't insert here!
             return undefined;
         }
 
         return enclosingJsonValue;
+    }
+
+    /**
+     * Gets the nearest enclosing parent (array or object) at the current position
+     */
+    public getEnclosingParent(): Json.ArrayValue | Json.ObjectValue | undefined {
+        const enclosingJsonValue = this.document.jsonParseResult.getValueAtCharacterIndex(
+            this.documentCharacterIndex,
+            ContainsBehavior.enclosed);
+        if (enclosingJsonValue) {
+            const lineage: (Json.ArrayValue | Json.ObjectValue | Json.Property)[] | undefined = this.document.topLevelValue?.findLineage(enclosingJsonValue) ?? [];
+            const lineageWithoutProperties = <(Json.ArrayValue | Json.ObjectValue)[]>lineage.filter(l => !(l instanceof Json.Property));
+            return lineageWithoutProperties[lineage.length - 1];
+        }
+
+        return undefined;
     }
 }

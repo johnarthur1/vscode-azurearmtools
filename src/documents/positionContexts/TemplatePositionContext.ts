@@ -314,7 +314,7 @@ export class TemplatePositionContext extends PositionContext {
     }
 
     public async getCompletionItems(triggerCharacter: string | undefined): Promise<ICompletionItemsResult> {
-        const tleInfo = this.tleInfo;
+        const tleInfo = this.tleInfo; // << BREAKPOINT HERE (TWO)
         const completions: Completion.Item[] = [];
 
         for (let uniqueScope of this.document.uniqueScopes) {
@@ -375,6 +375,26 @@ export class TemplatePositionContext extends PositionContext {
         return { items: completions };
     }
 
+    /**
+     * Gets the scope at the current position
+     */
+    private getScope(): TemplateScope {
+        if (this.jsonValue && this.document.topLevelValue) {
+            const objectLineage = <(Json.ObjectValue | Json.ArrayValue)[]>this.document.topLevelValue
+                ?.findLineage(this.jsonValue)
+                ?.filter/*asdf extract*/(v => v instanceof Json.ObjectValue);
+            const scopes = this.document.allScopes; //asdf not unique because resources are unique even when scope is not
+            for (const parent of objectLineage.reverse()) {
+                const innermostMachingScope = scopes.find(s => s.rootObject === parent);
+                if (innermostMachingScope) {
+                    return innermostMachingScope;
+                }
+            }
+        }
+
+        return this.document.topLevelScope;
+    }
+
     private getDependsOnCompletionItems(): Completion.Item[] {
         const completions: Completion.Item[] = [];
         let span: Span;
@@ -386,7 +406,8 @@ export class TemplatePositionContext extends PositionContext {
             span = this.emptySpanAtDocumentCharacterIndex;
         }
 
-        for (const resource of this.document.topLevelScope/*asdf*/.resources) { //asdf getResourcesInfo?
+        const scope = this.getScope();
+        for (const resource of scope.resources) { //asdf getResourcesInfo?
             let /*asdf*/ name = resource.nameValue?.asStringValue?.unquotedValue;
             const resType = resource.resourceTypeValue?.asStringValue?.unquotedValue;
 

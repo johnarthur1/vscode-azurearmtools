@@ -9,7 +9,7 @@ import { assert } from "../fixed_assert";
 import { LineColPos } from '../language/LineColPos';
 import { Span } from '../language/Span';
 
-export function getVSCodeRangeFromSpan(deploymentDocument: IDocument, span: Span): vscode.Range {
+export function getVSCodeRangeFromSpan(deploymentDocument: IDocument, span: Span): vscode.Range { //asdf rename
     assert(span);
     assert(deploymentDocument);
 

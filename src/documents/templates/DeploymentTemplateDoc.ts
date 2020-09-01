@@ -447,7 +447,7 @@ export class DeploymentTemplateDoc extends DeploymentDocument {
         return result;
     }
 
-    private visitAllReachableStringValues(onStringValue: (stringValue: Json.StringValue) => void): void {
+    public visitAllReachableStringValues(onStringValue: (stringValue: Json.StringValue) => void): void {
         let value = this.topLevelValue;
         if (value) {
             GenericStringVisitor.visit(value, onStringValue);

@@ -861,6 +861,9 @@ export class AzureRMTools {
             };
             ext.context.subscriptions.push(vscode.languages.registerCodeLensProvider(templateDocumentSelector, codeLensProvider));
 
+            ext.context.subscriptions.push(
+                vscode.languages.registerCodeLensProvider(templateDocumentSelector, codeLensProvider));
+
             // Code actions provider
             const codeActionProvider: vscode.CodeActionProvider = {
                 provideCodeActions: async (
@@ -945,6 +948,55 @@ export class AzureRMTools {
                 }
             };
             ext.context.subscriptions.push(vscode.languages.registerRenameProvider(templateOrParameterDocumentSelector, renameProvider));
+
+            ext.context.subscriptions.push(
+                vscode.languages.registerDocumentLinkProvider(templateDocumentSelector, {
+                    provideDocumentLinks: async (textDocument: vscode.TextDocument, token: vscode.CancellationToken): Promise<vscode.DocumentLink[]> => {
+                        // if (!ext.configuration.get<boolean>(configKeys.enableCodeLens)) {
+                        //     return undefined;
+                        // }
+
+                        //return callWithTelemetryAndErrorHandlingSync('asdf', (actionContext: IActionContext): vscode.DocumentLink[] | undefined => {
+                        // actionContext.errorHandling.suppressDisplay = true;
+                        // actionContext.telemetry.suppressIfSuccessful = true;
+                        const doc = this.getOpenedDeploymentDocument(textDocument.uri);
+                        if (doc) {
+                            const links: vscode.DocumentLink[] = [];
+
+                            // const dpUri = this._mapping.getParameterFile(doc.documentUri);
+                            // let parametersProvider: ParameterValuesSourceProviderFromParameterFile | undefined;
+                            // if (dpUri) {
+                            //     // There is a parameter file, but we don't wan't to retrieve until we resolve
+                            //     // the code lens because onProvideCodeLenses is supposed to be fast.
+                            //     parametersProvider = new ParameterValuesSourceProviderFromParameterFile(this, dpUri);
+                            // }
+
+                            if (doc instanceof DeploymentTemplateDoc) {
+                                doc.visitAllReachableStringValues(jsonStringValue => {
+                                    //const jsonTokenStartIndex: number = jsonQuotedStringToken.span.startIndex;
+                                    //const jsonTokenStartIndex = jsonStringValue.span.startIndex;
+
+                                    const tleParseResult: TLE.TleParseResult | undefined = doc.getTLEParseResultFromJsonStringValue(jsonStringValue);
+                                    //const expressionScope: TemplateScope = tleParseResult.scope;
+
+                                    const tleExpression: TLE.Value | undefined = tleParseResult.expression;
+                                    const jsonTokenStartIndex = jsonStringValue.span.startIndex;
+                                    const links2 = LinkVisitor.visit(tleExpression, doc, jsonTokenStartIndex).links;
+                                    links.push(...links2);
+                                });
+
+                            }
+
+                            return links;
+                        }
+
+                        return [];
+                    },
+                    resolveDocumentLink: async (link: vscode.DocumentLink, token: vscode.CancellationToken): Promise<vscode.DocumentLink> => {
+                        return link;
+                    }
+                })
+            );
 
             startArmLanguageServerInBackground();
         });
@@ -1736,5 +1788,40 @@ class AsdfCodeLens extends ResolvableCodeLens {//asdf
         };
 
         return true;
+    }
+}
+
+// tslint:disable-next-line: max-classes-per-file
+class LinkVisitor extends TLE.Visitor {
+    private _links: vscode.DocumentLink[] = [];
+
+    public constructor(private readonly document: DeploymentTemplateDoc, private readonly jsonTokenStartIndex: number) {
+        super();
+    }
+
+    public get links(): vscode.DocumentLink[] {
+        return this._links;
+    }
+
+    public static visit(tleValue: TLE.Value | undefined, document: DeploymentTemplateDoc, jsonTokenStartIndex: number): LinkVisitor {
+        const visitor = new LinkVisitor(document, jsonTokenStartIndex);
+        if (tleValue) {
+            tleValue.accept(visitor);
+        }
+        return visitor;
+    }
+
+    public visitFunctionCall(tleFunction: TLE.FunctionCallValue): void {
+        const functionName: string | undefined = tleFunction.name;
+        if (!functionName || tleFunction.namespaceToken) {
+            return;
+        }
+
+        if (functionName.toLowerCase() === 'resourceid') {
+            this._links.push(new vscode.DocumentLink(
+                getVSCodeRangeFromSpan(this.document, tleFunction.getSpan().translate(this.jsonTokenStartIndex)),
+                this.document.documentUri
+            ));
+        }
     }
 }

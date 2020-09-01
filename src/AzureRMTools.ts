@@ -24,7 +24,9 @@ import { addMissingParameters } from "./documents/parameters/ParameterValues";
 import { IReferenceSite, PositionContext } from "./documents/positionContexts/PositionContext";
 import { TemplatePositionContext } from "./documents/positionContexts/TemplatePositionContext";
 import { DeploymentTemplateDoc } from "./documents/templates/DeploymentTemplateDoc";
+import { getResourcesInfo, IJsonResourceInfo } from "./documents/templates/getResourcesInfo";
 import { getItemTypeQuickPicks, InsertItem } from "./documents/templates/insertItem";
+import { TemplateScope } from "./documents/templates/scopes/TemplateScope";
 import { getQuickPickItems, sortTemplate } from "./documents/templates/sortTemplate";
 import { mightBeDeploymentParameters, mightBeDeploymentTemplate, templateDocumentSelector, templateOrParameterDocumentSelector } from "./documents/templates/supported";
 import { TemplateSectionType } from "./documents/templates/TemplateSectionType";
@@ -33,7 +35,7 @@ import * as TLE from "./language/expressions/TLE";
 import { Issue } from "./language/Issue";
 import * as Json from "./language/json/JSON";
 import { ReferenceList } from "./language/ReferenceList";
-import * as Span from "./language/Span";
+import { Span } from "./language/Span";
 import { startArmLanguageServerInBackground } from "./languageclient/startArmLanguageServer";
 import { getPreferredSchema } from "./schemas";
 import { showSnippetContext } from "./snippets/showSnippetContext";
@@ -51,7 +53,7 @@ import { Stopwatch } from "./util/Stopwatch";
 import { Cancellation } from "./util/throwOnCancel";
 import { IncorrectArgumentsCountIssue } from "./visitors/IncorrectArgumentsCountIssue";
 import { UnrecognizedBuiltinFunctionIssue } from "./visitors/UnrecognizedFunctionIssues";
-import { IAddMissingParametersArgs, IGotoParameterValueArgs } from "./vscodeIntegration/commandArguments";
+import { IAddMissingParametersArgs, IGotoParameterValueArgs, IGotoResourceArgs } from "./vscodeIntegration/commandArguments";
 import { ConsoleOutputChannelWrapper } from "./vscodeIntegration/ConsoleOutputChannelWrapper";
 import * as Hover from './vscodeIntegration/Hover';
 import { RenameCodeActionProvider } from "./vscodeIntegration/RenameCodeActionProvider";
@@ -246,6 +248,11 @@ export class AzureRMTools {
             "azurerm-vscode-tools.codeLens.gotoParameterValue",
             async (actionContext: IActionContext, args: IGotoParameterValueArgs) => {
                 await this.onGotoParameterValue(actionContext, args);
+            });
+        registerCommand(
+            "azurerm-vscode-tools.codeLens.gotoResource", //asdf
+            async (actionContext: IActionContext, args: IGotoResourceArgs) => {
+                await this.onGotoResource(actionContext, args);
             });
 
         // Developer commands
@@ -1140,6 +1147,8 @@ export class AzureRMTools {
             actionContext.telemetry.suppressIfSuccessful = true;
             const doc = this.getOpenedDeploymentDocument(textDocument.uri);
             if (doc) {
+                const lenses: vscode.CodeLens[] = [];
+
                 const dpUri = this._mapping.getParameterFile(doc.documentUri);
                 let parametersProvider: ParameterValuesSourceProviderFromParameterFile | undefined;
                 if (dpUri) {
@@ -1148,10 +1157,26 @@ export class AzureRMTools {
                     parametersProvider = new ParameterValuesSourceProviderFromParameterFile(this, dpUri);
                 }
 
-                return doc.getCodeLenses(parametersProvider);
+                lenses.push(...doc.getCodeLenses(parametersProvider));
+
+                if (doc instanceof DeploymentTemplateDoc) {
+                    for (const scope of doc.allScopes) {
+                        const infos = getResourcesInfo(scope); //asdf all scopes
+                        //asdf 730a doesn't wotk
+                        for (const info of infos) {
+                            if (info.parent) {
+                                lenses.push(new AsdfCodeLens(scope, info.resourceObject.span, (<IJsonResourceInfo>info.parent).resourceObject.span, `Child of "[${info.parent.shortNameExpression}"]`));
+                            }
+                            if (info.children.length > 0) {
+                                lenses.push(new AsdfCodeLens(scope, info.resourceObject.span, (<IJsonResourceInfo>info.children[0]).resourceObject.span, `${info.children.length} children`));
+                            }
+                        }
+                    }
+                }
+
+                return lenses;
             }
 
-            return undefined;
         });
     }
 
@@ -1272,7 +1297,7 @@ export class AzureRMTools {
                 // Second choice: To the "properties" section
                 ?? parameterValues.parameterValuesProperty?.nameValue.span
                 // Third choice: top of the file
-                ?? new Span.Span(0, 0);
+                ?? new Span(0, 0);
             range = getVSCodeRangeFromSpan(doc, span);
         } else if (args.inTemplateFile && doc instanceof DeploymentTemplateDoc) {
             range = args.inTemplateFile.range;
@@ -1282,6 +1307,20 @@ export class AzureRMTools {
             editor.selection = new vscode.Selection(range.start, range.end);
             editor.revealRange(range);
         }
+    }
+
+    private async onGotoResource(actionContext: IActionContext, args: IGotoResourceArgs): Promise<void> {
+        // Open the correct document
+        const uri = args.documentUri;
+        assert(uri);
+        let textDocument: vscode.TextDocument = await vscode.workspace.openTextDocument(uri);
+        const editor = await vscode.window.showTextDocument(textDocument);
+
+        // Navigate to the correct range, if any
+        //const doc: DeploymentDocument | undefined = this.getOpenedDeploymentDocument(uri);
+        let range: vscode.Range | undefined = args.range;
+        editor.selection = new vscode.Selection(range.start, range.end);
+        editor.revealRange(range);
     }
 
     // CONSIDER: Cache when we have to read from disk, or better, load into text
@@ -1645,7 +1684,7 @@ export class AzureRMTools {
 
                     let braceHighlightRanges: vscode.Range[] = [];
                     for (let tleHighlightIndex of tleBraceHighlightIndexes) {
-                        const highlightSpan = new Span.Span(tleHighlightIndex + pc.jsonTokenStartIndex, 1);
+                        const highlightSpan = new Span(tleHighlightIndex + pc.jsonTokenStartIndex, 1);
                         braceHighlightRanges.push(getVSCodeRangeFromSpan(pc.document, highlightSpan));
                     }
 
@@ -1671,5 +1710,31 @@ export class AzureRMTools {
 
             this.closeDeploymentFile(closedDocument);
         });
+    }
+}
+
+class AsdfCodeLens extends ResolvableCodeLens {//asdf
+    public constructor(
+        scope: TemplateScope, //asdf why needed?
+        span: Span,
+        private readonly targetSpan: Span,
+        private readonly title: string
+    ) {
+        super(scope, span); //asdf inside the curlies
+    }
+
+    public async resolve(): Promise<boolean> {
+        this.command = {
+            title: this.title,
+            command: 'azurerm-vscode-tools.codeLens.gotoResource', //asdf references
+            arguments: [
+                <IGotoResourceArgs>{
+                    documentUri: this.scope.document.documentUri,
+                    range: getVSCodeRangeFromSpan(this.scope.document, this.targetSpan)
+                }
+            ]
+        };
+
+        return true;
     }
 }
